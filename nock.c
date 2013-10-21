@@ -154,12 +154,34 @@ noun* nock(noun* n) {
       return nock(L(a, A(2), L(A(0), A(1)), A(2), L(A(1), c, d), L(A(1), A(0)), A(2), L(A(1), A(2), A(3)), L(A(1), A(0)), A(4), A(4), b));
     }
     // 29 ::    *[a 7 b c]        *[a 2 b 1 c]
+    if (instruction == 7 && is_cell(arg)) {
+      noun *a = subj, *b = fst(arg), *c = snd(arg); free(arg);
+      return nock(L(a, A(2), b, A(1), c));
+    }
     // 30 ::    *[a 8 b c]        *[a 7 [[7 [0 1] b] 0 1] c]
+    if (instruction == 8 && is_cell(arg)) {
+      noun *a = subj, *b = fst(arg), *c = snd(arg); free(arg);
+      return nock(L(a, A(7), L(L(A(7), L(A(0), A(1)), b), A(0), A(1)), c));
+    }
     // 31 ::    *[a 9 b c]        *[a 7 c 2 [0 1] 0 b]
+    if (instruction == 9 && is_cell(arg)) {
+      noun *a = subj, *b = fst(arg), *c = snd(arg); free(arg);
+      return nock(L(a, A(7), c, A(2), C(A(0), A(1)), A(0), b));
+    }
     // 32 ::    *[a 10 [b c] d]   *[a 8 c 7 [0 3] d]
+    if (instruction == 10 && is_cell(arg) && is_cell(fst(arg))) {
+      noun *a = subj, *b = fst(fst(arg)), *c = snd(fst(arg)), *d = snd(arg);
+      free(fst(arg)); free(arg);
+      free_noun(b);
+      return nock(L(a, A(8), c, A(7), C(A(0), A(3)), d));
+    }
     // 33 ::    *[a 10 b c]       *[a c]
+    if (instruction == 10 && is_cell(arg)) {
+      noun *a = subj, *b = fst(arg), *c = snd(arg); free(arg);
+      free_noun(b);
+      return nock(C(a, c));
+    }
   }
-  printf("crashing: "); print_noun(n); printf("\n");
   crash("*a");
 }
 
