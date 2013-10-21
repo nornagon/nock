@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdarg.h>
 typedef unsigned long atom_t;
 typedef struct noun {
   union {
@@ -16,6 +17,22 @@ int is_cell(noun* n) { return (n->as_atom.is_atom & 1) == 0; }
 noun* C(noun* a, noun* b) { noun* r = malloc(sizeof(noun)); r->as_cell.a = a; r->as_cell.b = b; return r; }
 noun* A(atom_t v) { noun* r = malloc(sizeof(noun)); r->as_atom.is_atom = 1; r->as_atom.val = v; return r; }
 void free_noun(noun* n) { if (n && is_cell(n)) { free_noun(n->as_cell.a); free_noun(n->as_cell.b); } free(n); }
+#define NUMARGS(...)  (sizeof((noun*[]){__VA_ARGS__})/sizeof(noun*))
+#define L(...) (list(NUMARGS(__VA_ARGS__), __VA_ARGS__))
+noun* list(int numargs, ...) {
+  noun *root, *cell = root = C(NULL, NULL), *prev = NULL;
+  va_list ap;
+  va_start(ap, numargs);
+  while (numargs--) {
+    noun *n = va_arg(ap, noun*);
+    if (fst(cell) == NULL) fst(cell) = n;
+    else { prev = cell; cell = snd(cell) = C(n, NULL); }
+  }
+  if (prev) { snd(prev) = fst(cell); free(cell); }
+  va_end(ap);
+  return root;
+}
+
 noun* copy_noun(noun* n) {
   if (is_cell(n)) return C(copy_noun(fst(n)), copy_noun(snd(n)));
   else return A(val(n));
@@ -24,6 +41,11 @@ noun* copy_noun(noun* n) {
 void print_noun(noun* n) {
   if (is_atom(n)) printf("%lu", val(n));
   else { printf("["); print_noun(fst(n)); printf(" "); print_noun(snd(n)); printf("]"); }
+}
+
+void __attribute__ ((noreturn)) crash(const char* message) {
+  fprintf(stderr, "CRASH: %s\n", message);
+  exit(1);
 }
 
 noun* inc(noun* n) {
@@ -76,6 +98,8 @@ noun* slot(noun* n) {
   return slot(n);
 }
 noun* nock(noun* n) {
+  // contract: by calling this function, you release ownership of |n| and all
+  // its children. the return value belongs to you. take good care of it.
   printf("*"); print_noun(n); printf("\n");
   if (is_atom(n)) return n;
   noun* formula = snd(n);
@@ -85,50 +109,58 @@ noun* nock(noun* n) {
   if (is_cell(fst(formula))) {
     noun *a = subj, *b = fst(fst(formula)), *c = snd(fst(formula)), *d = snd(formula);
     noun *a2 = copy_noun(a);
-    free(formula);
+    free(fst(formula)); free(formula);
     return C(nock(C(a, C(b, c))), nock(C(a2, d)));
+  } else {
+    atom_t instruction = val(fst(formula));
+    free(fst(formula));
+    noun* arg = snd(formula);
+    free(formula);
+    // 21 ::    *[a 0 b]          /[b a]
+    if (instruction == 0) {
+      noun *a = subj, *b = arg;
+      return slot(C(b, a));
+    }
+    // 22 ::    *[a 1 b]          b
+    if (instruction == 1) {
+      free_noun(subj);
+      return arg;
+    }
+    // 23 ::    *[a 2 b c]        *[*[a b] *[a c]]
+    if (instruction == 2 && is_cell(arg)) {
+      noun *a = subj, *b = fst(arg), *c = snd(arg); free(arg);
+      noun *a2 = copy_noun(a);
+      return nock(C(nock(C(a, b)), nock(C(a2, c))));
+    }
+    // 24 ::    *[a 3 b]          ?*[a b]
+    if (instruction == 3) {
+      noun *tmp = nock(C(subj, arg));
+      noun *r = is_cell(tmp) ? A(0) : A(1);
+      free_noun(tmp);
+      return r;
+    }
+    // 25 ::    *[a 4 b]          +*[a b]
+    if (instruction == 4) {
+      return inc(nock(C(subj, arg)));
+    }
+    // 26 ::    *[a 5 b]          =*[a b]
+    if (instruction == 5) {
+      return eq(nock(C(subj, arg)));
+    }
+    // 28 ::    *[a 6 b c d]      *[a 2 [0 1] 2 [1 c d] [1 0] 2 [1 2 3] [1 0] 4 4 b]
+    if (instruction == 6 && is_cell(arg) && is_cell(snd(arg))) {
+      noun *a = subj, *b = fst(arg), *c = fst(snd(arg)), *d = snd(snd(arg));
+      free(snd(arg)); free(arg);
+      return nock(L(a, A(2), L(A(0), A(1)), A(2), L(A(1), c, d), L(A(1), A(0)), A(2), L(A(1), A(2), A(3)), L(A(1), A(0)), A(4), A(4), b));
+    }
+    // 29 ::    *[a 7 b c]        *[a 2 b 1 c]
+    // 30 ::    *[a 8 b c]        *[a 7 [[7 [0 1] b] 0 1] c]
+    // 31 ::    *[a 9 b c]        *[a 7 c 2 [0 1] 0 b]
+    // 32 ::    *[a 10 [b c] d]   *[a 8 c 7 [0 3] d]
+    // 33 ::    *[a 10 b c]       *[a c]
   }
-  // 21 ::    *[a 0 b]          /[b a]
-  if (is_atom(fst(formula)) && val(fst(formula)) == 0) {
-    noun *a = subj, *b = snd(formula);
-    free(fst(formula)); free(formula);
-    return slot(C(b, a));
-  }
-  // 22 ::    *[a 1 b]          b
-  if (is_atom(fst(formula)) && val(fst(formula)) == 1) {
-    noun *a = subj, *b = snd(formula);
-    free(fst(formula)); free(formula); free(a);
-    return b;
-  }
-  // 23 ::    *[a 2 b c]        *[*[a b] *[a c]]
-  if (is_atom(fst(formula)) && val(fst(formula)) == 2 && is_cell(snd(formula))) {
-    noun *a = subj, *b = fst(snd(formula)), *c = snd(snd(formula));
-    noun *a2 = copy_noun(a);
-    free(fst(formula)); free(snd(formula)); free(formula);
-    return nock(C(nock(C(a, b)), nock(C(a2, c))));
-  }
-  // 24 ::    *[a 3 b]          ?*[a b]
-  if (is_atom(fst(formula)) && val(fst(formula)) == 3) {
-    noun *a = subj, *b = snd(formula);
-    free(fst(formula)); free(formula);
-    noun* tmp = nock(C(a, b));
-    noun* r = is_cell(tmp) ? A(0) : A(1);
-    free_noun(tmp);
-    return r;
-  }
-  // 25 ::    *[a 4 b]          +*[a b]
-  if (is_atom(fst(formula)) && val(fst(formula)) == 4) {
-    noun *a = subj, *b = snd(formula);
-    free(fst(formula)); free(formula);
-    return inc(nock(C(a,b)));
-  }
-  // 26 ::    *[a 5 b]          =*[a b]
-  if (is_atom(fst(formula)) && val(fst(formula)) == 5) {
-    noun *a = subj, *b = snd(formula);
-    free(fst(formula)); free(formula);
-    return eq(nock(C(a,b)));
-  }
-  exit(1); // TODO better crash
+  printf("crashing: "); print_noun(n); printf("\n");
+  crash("*a");
 }
 
 noun* parse(const char *str, char **endptr);
