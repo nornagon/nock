@@ -138,10 +138,11 @@ noun* nock(noun* n) {
       return eq(nock(C(subj, arg)));
     }
     // 28 ::    *[a 6 b c d]      *[a 2 [0 1] 2 [1 c d] [1 0] 2 [1 2 3] [1 0] 4 4 b]
+    // 6r ::    *[a 6 b c d]      *[a *[[c d] [0 *[[2 3] [0 ++*[a b]]]]]]
     if (instruction == 6 && is_cell(arg) && is_cell(snd(arg))) {
       noun *a = subj, *b = fst(arg), *c = fst(snd(arg)), *d = snd(snd(arg));
       free(snd(arg)); free(arg);
-      return nock(L(a, A(2), L(A(0), A(1)), A(2), L(A(1), c, d), L(A(1), A(0)), A(2), L(A(1), A(2), A(3)), L(A(1), A(0)), A(4), A(4), b));
+      return nock(C(copy_noun(a), nock(C(C(c, d), C(A(0), nock(C(C(A(2),A(3)), C(A(0), inc(inc(nock(C(a, b))))))))))));
     }
     // 29 ::    *[a 7 b c]        *[a 2 b 1 c]
     if (instruction == 7 && is_cell(arg)) {
