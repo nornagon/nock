@@ -1,22 +1,12 @@
+#include "nock.h"
+
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdarg.h>
-typedef unsigned long atom_t;
-typedef struct noun {
-  union {
-    struct { struct noun *a, *b; } as_cell;
-    struct { atom_t val; unsigned long is_atom; } as_atom;
-  };
-} noun;
-#define fst(n) n->as_cell.a
-#define snd(n) n->as_cell.b
-#define val(n) n->as_atom.val
-int is_atom(noun* n) { return n->as_atom.is_atom & 1; } // if as_cell.b is a pointer, the lowest bit will be 0
-int is_cell(noun* n) { return (n->as_atom.is_atom & 1) == 0; }
-noun* C(noun* a, noun* b) { noun* r = malloc(sizeof(noun)); r->as_cell.a = a; r->as_cell.b = b; return r; }
-noun* A(atom_t v) { noun* r = malloc(sizeof(noun)); r->as_atom.is_atom = 1; r->as_atom.val = v; return r; }
-void free_noun(noun* n) { if (n && is_cell(n)) { free_noun(n->as_cell.a); free_noun(n->as_cell.b); } free(n); }
+
+void free_noun(noun* n) {
+  if (n && is_cell(n)) { free_noun(n->as_cell.a); free_noun(n->as_cell.b); } free(n); }
 #define NUMARGS(...)  (sizeof((noun*[]){__VA_ARGS__})/sizeof(noun*))
 #define L(...) (list(NUMARGS(__VA_ARGS__), __VA_ARGS__))
 noun* list(int numargs, ...) {
@@ -185,7 +175,7 @@ noun* nock(noun* n) {
   crash("*a");
 }
 
-noun* parse(const char *str, char **endptr);
+noun* parse_(const char *str, char **endptr);
 noun* parse_num(const char *str, char **endptr) {
   long i = strtol(str, endptr, 10);
   if (*endptr != str) { // we parsed a number
@@ -199,7 +189,7 @@ noun* parse_cell(const char *str, char **endptr) {
   str++;
   noun *root, *cell = root = C(NULL, NULL), *prev = NULL;
   while (*str) {
-    noun *n = parse(str, endptr);
+    noun *n = parse_(str, endptr);
     if (!n) { fprintf(stderr, "parse fail: expected a noun at `%.5s'\n", str); exit(1); }
     if (fst(cell) == NULL) fst(cell) = n;
     else { prev = cell; cell = snd(cell) = C(n, NULL); }
@@ -212,19 +202,13 @@ noun* parse_cell(const char *str, char **endptr) {
   if (prev) { snd(prev) = fst(cell); free(cell); }
   return root;
 }
-noun* parse(const char *str, char **endptr) {
+noun* parse_(const char *str, char **endptr) {
   while (isspace(*str)) str++;
   noun *n = parse_cell(str, endptr);
   if (!n) n = parse_num(str, endptr);
   return n;
 }
-
-int main(int argc, char *argv[]) {
+noun* parse(const char *str) {
   char *endptr = 0;
-  noun *n = parse(argv[1], &endptr);
-  printf("> "); print_noun(n); printf("\n");
-  noun *res = nock(n);
-  print_noun(res); printf("\n");
-  free_noun(res);
-  return 0;
+  return parse_(str, &endptr);
 }
